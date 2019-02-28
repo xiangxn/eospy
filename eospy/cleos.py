@@ -9,6 +9,7 @@ from .types import EOSEncoder, Transaction, PackedTransaction
 from .exceptions import EOSKeyError, EOSMsigInvalidProposal
 import json
 import os
+import asyncio
 
 class Cleos :
     
@@ -30,11 +31,23 @@ class Cleos :
         url = cmd.create_url()
         return cmd.get_url(url, **kwargs)
 
+    async def async_get(self, func = '', **kwargs):
+        cmd = eval('self._dynurl.{0}'.format(func))
+        url = cmd.create_url()
+        res = await cmd.async_get_url(url, **kwargs)
+        return res
+
     def post(self, func='', **kwargs) :
         ''' '''
         cmd = eval('self._dynurl.{0}'.format(func))
         url = cmd.create_url()
         return cmd.post_url(url, **kwargs)
+
+    async def async_post(self, func = '', **kwargs) :
+        cmd = eval('self._dynurl.{0}'.format(func))
+        url = cmd.create_url()
+        res = await cmd.async_post_url(url, **kwargs)
+        return res
     
     def get_wallet(self, func='', **kwargs) :
         ''' '''
@@ -134,6 +147,11 @@ class Cleos :
         '''
         json = {"json":True, "code":code, "scope":scope, "table":table, "table_key":table_key, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
         return self.post('chain.get_table_rows', params=None, json=json, timeout=timeout)
+
+    async def async_get_table(self, code, scope, table, table_key='', lower_bound='', upper_bound='', limit=10, timeout=30) :
+        json = {"json":True, "code":code, "scope":scope, "table":table, "table_key":table_key, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
+        res = await self.async_post('chain.get_table_rows', params=None, json=json, timeout=timeout)
+        return res
 
     def get_producers(self, lower_bound='', limit=50, timeout=30) :
         '''
