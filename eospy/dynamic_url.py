@@ -12,7 +12,6 @@ class DynamicUrl :
         self._cache = cache or []
         self._baseurl = url
         self._version = version
-        self.session = aiohttp.ClientSession()
 
     def __getattr__(self, name) :
         return self._(name)
@@ -48,14 +47,20 @@ class DynamicUrl :
         return r.json()
 
     async def async_get_url(self, url, params = None, json = None, timeout = 30):
-        res = await asyncio.wait_for(self.session.get(url, params = params, json = json), timeout)
-        result = await res.json()
-        return result
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params = params, json = json, timeout = timeout) as res:
+                data = {}
+                if res.status == 200:
+                    data = await res.json()
+                return data
 
     async def async_post_url(self, url, params = None, json = None, data = None, timeout = 30):
-        res = await asyncio.wait_for(self.session.post(url, params = params, json = json, data = data), timeout)
-        result = await res.json()
-        return result
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, params = params, json = json, data = data, timeout = timeout) as res:
+                data = {}
+                if res.status == 200:
+                    data = await res.json()
+                return data
 
 
     
