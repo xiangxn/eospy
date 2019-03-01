@@ -194,6 +194,38 @@ class Cleos :
         if broadcast :
             return self.post('chain.push_transaction', params=None, data=data, timeout=timeout)
         return data
+
+    async def async_push_transaction(self, transaction, keys, broadcast=True, compression='none', timeout=30) :
+        ''' parameter keys can be a list of WIF strings or EOSKey objects or a filename to key file'''
+        chain_info,lib_info = self.get_chain_lib_info()
+        trx = Transaction(transaction, chain_info, lib_info)
+        #encoded = trx.encode()
+        digest = sig_digest(trx.encode(), chain_info['chain_id'])
+        # sign the transaction
+        signatures = []
+        if os.path.isfile(keys):
+             keys = parse_key_file(keys, first_key=False)
+        elif not isinstance(keys, list) :
+            keys = [keys]
+
+        for key in keys :
+            if check_wif(key) :
+                k = EOSKey(key)
+            elif isinstance(key, EOSKey) :
+                k = key
+            else :
+                raise EOSKeyError('Must pass a WIF string or EOSKey')
+            signatures.append(k.sign(digest))
+        # build final trx
+        final_trx = {
+                'compression' : compression,
+                'transaction' : trx.__dict__,
+                'signatures' : signatures
+        }
+        data = json.dumps(final_trx, cls=EOSEncoder)
+        if broadcast :
+            return await self.async_post('chain.push_transaction', params=None, data=data, timeout=timeout)
+        return data
     
     def push_block(self, timeout=30) :
         raise NotImplementedError
