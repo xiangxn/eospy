@@ -132,7 +132,8 @@ class Cleos :
       {"account":"eosio","code":"eosio.token","symbol":"EOS"}
       '''
       json={'account':account, 'code':code, 'symbol':symbol}
-      return self.async_post('chain.get_currency_balance', params=None, json=json, timeout=timeout)
+      res = await self.async_post('chain.get_currency_balance', params=None, json=json, timeout=timeout)
+      return res
 
     def get_currency_stats(self, code, symbol, timeout=30) :
         return self.post('chain.get_currency_stats', json={'code':code, 'symbol':symbol})
