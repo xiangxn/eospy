@@ -149,16 +149,16 @@ class Cleos :
         '''
         return self.post('history.get_transaction', params=None, json={'id': trans_id}, timeout=timeout)
 
-    def get_table(self, code, scope, table, table_key='', lower_bound='', upper_bound='', limit=10, timeout=30) :
+    def get_table(self, code, scope, table, index_position='', key_type='', lower_bound='', upper_bound='', limit=10, timeout=30) :
         '''
         POST /v1/chain/get_table_rows
-        {"json":true,"code":"eosio","scope":"eosio","table":"producers","table_key":"","lower_bound":"","upper_bound":"","limit":10}
+        {"json":true,"code":"eosio","scope":"eosio","table":"producers","index_position":"primary, secondary, tertiary, fourth, fifth, sixth, seventh, eighth, ninth , tenth","lower_bound":"","upper_bound":"","limit":10}
         '''
-        json = {"json":True, "code":code, "scope":scope, "table":table, "table_key":table_key, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
+        json = {"json":True, "code":code, "scope":scope, "table":table, "index_position":index_position, "key_type": key_type, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
         return self.post('chain.get_table_rows', params=None, json=json, timeout=timeout)
 
-    async def async_get_table(self, code, scope, table, table_key='', lower_bound='', upper_bound='', limit=10, timeout=30) :
-        json = {"json":True, "code":code, "scope":scope, "table":table, "table_key":table_key, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
+    async def async_get_table(self, code, scope, table, index_position='', key_type='', lower_bound='', upper_bound='', limit=10, timeout=30) :
+        json = {"json":True, "code":code, "scope":scope, "table":table, "index_position":index_position, "key_type": key_type, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
         res = await self.async_post('chain.get_table_rows', params=None, json=json, timeout=timeout)
         return res
 
