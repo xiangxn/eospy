@@ -62,15 +62,30 @@ class Cleos :
         ''' '''
         return self.get('chain.get_info', timeout=timeout)
 
+    async def async_get_info(self, timeout=30):
+        res = await self.async_get('chain.get_info', timeout=timeout)
+        return res
+
     def get_chain_lib_info(self, timeout=30) :
         ''' '''
         chain_info = self.get('chain.get_info', timeout=timeout)
         lib_info = self.get_block(chain_info['last_irreversible_block_num'], timeout=timeout)
         return chain_info, lib_info
+
+    async def async_get_chain_lib_info(self, timeout=30) :
+        ''' '''
+        chain_info = await self.async_get('chain.get_info', timeout=timeout)
+        lib_info = await self.async_get_block(chain_info['last_irreversible_block_num'], timeout=timeout)
+        return chain_info, lib_info
         
     def get_block(self, block_num, timeout=30) :
         ''' '''
         return self.post('chain.get_block', params=None, json={'block_num_or_id' : block_num}, timeout=timeout)
+
+    async def async_get_block(self, block_num, timeout=30) :
+        ''' '''
+        res = await self.async_post('chain.get_block', params=None, json={'block_num_or_id' : block_num}, timeout=timeout)
+        return res
         
     def get_account(self, acct_name, timeout=30) :
         ''' '''
@@ -267,7 +282,7 @@ class Cleos :
 
     async def async_push_transaction(self, transaction, keys, broadcast=True, compression='none', timeout=30) :
         ''' parameter keys can be a list of WIF strings or EOSKey objects or a filename to key file'''
-        chain_info,lib_info = self.get_chain_lib_info()
+        chain_info,lib_info = await self.async_get_chain_lib_info()
         trx = Transaction(transaction, chain_info, lib_info)
         #encoded = trx.encode()
         digest = sig_digest(trx.encode(), chain_info['chain_id'])
@@ -309,10 +324,22 @@ class Cleos :
         json = {'code':code, 'action':action, 'binargs': binargs}
         return self.post('chain.abi_bin_to_json', params=None, json=json, timeout=timeout)
 
+    async def async_abi_bin_to_json(self, code, action, binargs, timeout=30) :
+        ''' '''
+        json = {'code':code, 'action':action, 'binargs': binargs}
+        res = await self.async_post('chain.abi_bin_to_json', params=None, json=json, timeout=timeout)
+        return res
+
     def abi_json_to_bin(self, code, action, args, timeout=30) :
         ''' '''
         json = {'code':code, 'action':action, 'args': args}
         return self.post('chain.abi_json_to_bin', params=None, json=json, timeout=timeout)
+
+    async def async_abi_json_to_bin(self, code, action, args, timeout=30) :
+        ''' '''
+        json = {'code':code, 'action':action, 'args': args}
+        res = await self.async_post('chain.abi_json_to_bin', params=None, json=json, timeout=timeout)
+        return res
         
     #####
     # create keys
