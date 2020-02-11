@@ -4,22 +4,22 @@
 
 from .dynamic_url import DynamicUrl
 from .keys import EOSKey, check_wif
-from .utils import sig_digest, parse_key_file
-from .types import EOSEncoder, Transaction, PackedTransaction
-from .exceptions import EOSKeyError, EOSMsigInvalidProposal
+from .signer import Signer
+from .utils import sig_digest, parse_key_file, sha256
+from .types import EOSEncoder, Transaction, PackedTransaction, Abi
+from .exceptions import (EOSKeyError, EOSMsigInvalidProposal, EOSSetSameAbi, EOSSetSameCode)
 import json
 import os
 import asyncio
+from binascii import hexlify
 
 class Cleos :
     
-    def __init__(self, url='http://localhost:8888', wallet_url='http://localhost:8888', version='v1') :
+    def __init__(self, url='http://localhost:8888', version='v1') :
         ''' '''
         self._prod_url = url
-        self._wallet_url = wallet_url
         self._version = version
         self._dynurl = DynamicUrl(url=self._prod_url, version=self._version)
-        self._walleturl = DynamicUrl(url=self._wallet_url, version=self._version)
     
     #####
     # private functions
@@ -55,20 +55,6 @@ class Cleos :
         url = get_cmd.create_url()
         return get_cmd.get_url(url, **kwargs)
 
-    def post_wallet(self, func='', **kwargs) :
-        ''' '''
-        post_cmd = eval('self._walleturl.{0}'.format(func))
-        url = post_cmd.create_url()
-        return post_cmd.get_url(url, **kwargs)
-    
-    #
-    # wallet functions
-    #
-    def wallet_unlock(self, password, name="default",):
-        if not password:
-            raise NotImplementedError
-        return self.post_wallet('wallet.unlock', params=[name,password], json=None)
-    
     #####
     # get methods
     #####
@@ -101,6 +87,10 @@ class Cleos :
     def get_abi(self, acct_name, timeout=30) :
         ''' '''
         return self.post('chain.get_abi', params=None, json={'account_name' : acct_name}, timeout=timeout)
+
+    def get_raw_abi(self, acct_name, timeout=30) :
+        ''' '''
+        return self.post('chain.get_raw_abi', params=None, json={'account_name' : acct_name}, timeout=timeout)
         
     def get_actions(self, acct_name, pos=-1, offset=-20, timeout=30) :
         '''
@@ -152,9 +142,9 @@ class Cleos :
     def get_table(self, code, scope, table, index_position='', key_type='', lower_bound='', upper_bound='', limit=10, timeout=30) :
         '''
         POST /v1/chain/get_table_rows
-        {"json":true,"code":"eosio","scope":"eosio","table":"producers","index_position":"primary, secondary, tertiary, fourth, fifth, sixth, seventh, eighth, ninth , tenth","lower_bound":"","upper_bound":"","limit":10}
+        {"json":true,"code":"eosio","scope":"eosio","table":"producers","index_position":"","key_type":"name","lower_bound":"","upper_bound":"","limit":10}
         '''
-        json = {"json":True, "code":code, "scope":scope, "table":table, "index_position":index_position, "key_type": key_type, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
+        json = {"json":True, "code":code, "scope":scope, "table":table, "key_type": key_type, "index_position":index_position, "lower_bound": lower_bound, "upper_bound": upper_bound, "limit": limit}
         return self.post('chain.get_table_rows', params=None, json=json, timeout=timeout)
 
     async def async_get_table(self, code, scope, table, index_position='', key_type='', lower_bound='', upper_bound='', limit=10, timeout=30) :
@@ -170,9 +160,80 @@ class Cleos :
         return self.post('chain.get_producers', params=None, json={'json':True, 'lower_bound':lower_bound, 'limit':limit}, timeout=timeout)
 
     #####
+    # set
+    #####
+
+    def set_abi(self, account, permission, abi_file, key, broadcast=True, timeout=30):
+        current_abi = Abi(self.get_abi(account)['abi'])
+        current_sha = sha256(current_abi.get_raw().encode('utf-8'))
+        with open(abi_file) as rf:
+            abi = json.load(rf)
+            new_abi = Abi(abi) 
+            # hex_abi = hexlify(abi)
+            new_sha = sha256(new_abi.get_raw().encode('utf-8'))
+            if current_sha == new_sha:
+                raise EOSSetSameAbi()
+            # generate trx
+            arguments = {
+                "account": account,  
+                "abi": new_abi.get_raw()
+            }
+            payload = {
+                "account": "eosio",
+                "name": "setabi",
+                "authorization": [{
+                    "actor": account,
+                    "permission": permission,
+                }],
+            }
+            # Converting payload to binary
+            data = self.abi_json_to_bin(payload['account'], payload['name'], arguments)
+            # Inserting payload binary form as "data" field in original payload
+            payload['data'] = data['binargs']
+            trx = {"actions": [payload]}
+            sign_key = EOSKey(key)
+            return self.push_transaction(trx, sign_key, broadcast=broadcast)
+
+
+    def set_code(self, account, permission, code_file, key, broadcast=True, timeout=30):
+        current_code = self.get_code(account)
+        # print(current_code)
+        # print(type(current_code))
+        current_sha = current_code['code_hash']
+        with open(code_file, 'rb') as rf:
+            wasm = rf.read()
+            hex_wasm = hexlify(wasm)
+            new_sha = sha256(hex_wasm)
+            if current_sha == new_sha:
+                raise EOSSetSameCode()
+            # generate trx
+            arguments = {
+                "account": account,
+                "vmtype": 0,
+                "vmversion": 0,
+                "code": hex_wasm.decode('utf-8')
+            }
+            payload = {
+                "account": "eosio",
+                "name": "setcode",
+                "authorization": [{
+                    "actor": account,
+                    "permission": permission,
+                }],
+            }
+            # Converting payload to binary
+            data = self.abi_json_to_bin(payload['account'], payload['name'], arguments)
+            # Inserting payload binary form as "data" field in original payload
+            payload['data'] = data['binargs']
+            trx = {"actions": [payload]}
+            sign_key = EOSKey(key)
+            return self.push_transaction(trx, sign_key, broadcast=broadcast)
+        
+
+    #####
     # transactions
     #####
-    def push_transaction(self, transaction, keys, broadcast=True, compression='none', timeout=30) :
+    def push_transaction(self, transaction, keys, broadcast=True, compression='none', timeout=30):
         ''' parameter keys can be a list of WIF strings or EOSKey objects or a filename to key file'''
         chain_info,lib_info = self.get_chain_lib_info()
         trx = Transaction(transaction, chain_info, lib_info)
@@ -180,19 +241,19 @@ class Cleos :
         digest = sig_digest(trx.encode(), chain_info['chain_id'])
         # sign the transaction
         signatures = []
-        if os.path.isfile(keys):
-             keys = parse_key_file(keys, first_key=False)
-        elif not isinstance(keys, list) :
+        # if os.path.isfile(keys):
+        #      keys = parse_key_file(keys, first_key=False)
+        if not isinstance(keys, list):
+            if not isinstance(keys, Signer):
+                raise EOSKeyError('Must pass a class that extends the eospy.Signer class')
             keys = [keys]
 
         for key in keys :
-            if check_wif(key) :
-                k = EOSKey(key)
-            elif isinstance(key, EOSKey) :
-                k = key
-            else :
-                raise EOSKeyError('Must pass a WIF string or EOSKey')
-            signatures.append(k.sign(digest))
+            # if check_wif(key) :
+            #     k = EOSKey(key)
+            if not isinstance(key, Signer) :
+                raise EOSKeyError('Must pass a class that extends the eospy.Signer class')               
+            signatures.append(key.sign(digest))
         # build final trx
         final_trx = {
                 'compression' : compression,
@@ -381,15 +442,5 @@ class Cleos :
         return self.push_transaction(trx, creator_privkey, broadcast=broadcast, timeout=timeout)
 
     def register_producer(self) :
-        json = {}
-        return self.post()
+        raise NotImplementedError()
 
-    #####
-    # wallet functions
-    #####
-    def wallet_list(self) :
-        return self.get_wallet('wallet.list_wallets')
-    
-    def wallet_open(self, name='default') :
-        return self.get_wallet('wallet.open', params=None, json={"wallet_name":name})
-    
