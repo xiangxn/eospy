@@ -91,6 +91,11 @@ class Cleos :
         ''' '''
         return self.post('chain.get_account', params=None, json={'account_name' : acct_name}, timeout=timeout)
 
+    async def async_get_account(self, acct_name, timeout=30) :
+        ''' '''
+        res = await self.async_post('chain.get_account', params=None, json={'account_name' : acct_name}, timeout=timeout) 
+        return res
+
     def get_code(self, acct_name, code_as_wasm=True, timeout=30) :
         ''' '''
         return self.post('chain.get_code', params=None, json={'account_name':acct_name, 'code_as_wasm':code_as_wasm}, timeout=timeout)
@@ -153,6 +158,14 @@ class Cleos :
         {"id":"abcd1234"}
         '''
         return self.post('history.get_transaction', params=None, json={'id': trans_id}, timeout=timeout)
+
+    async def async_get_transaction(self, trans_id, timeout=30) :
+        '''
+        POST /v1/history/get_transaction
+        {"id":"abcd1234"}
+        '''
+        res = await self.async_post('history.get_transaction', params=None, json={'id': trans_id}, timeout=timeout)
+        return res
 
     def get_table(self, code, scope, table, index_position='', key_type='', lower_bound='', upper_bound='', limit=10, timeout=30) :
         '''
