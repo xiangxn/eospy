@@ -54,7 +54,8 @@ class DynamicUrl :
                     if res.status == 200:
                         data = await res.json()
                     else:
-                        res.raise_for_status()
+                        err = await res.json()
+                        raise Exception(err)
             except Exception as e:
                 raise e
         return data
@@ -67,7 +68,8 @@ class DynamicUrl :
                     if res.status == 200:
                         data = await res.json()
                     else:
-                        res.raise_for_status()
+                        err = await res.json()
+                        raise Exception(err)
             except Exception as e:
                 raise e
         return data
