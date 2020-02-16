@@ -47,20 +47,31 @@ class DynamicUrl :
         return r.json()
 
     async def async_get_url(self, url, params = None, json = None, timeout = 30):
+        data = None
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params = params, json = json, timeout = timeout) as res:
-                data = {}
-                if res.status == 200:
-                    data = await res.json()
-                return data
+            try:
+                async with session.get(url, params = params, json = json, timeout = timeout) as res:
+                    if res.status == 200:
+                        data = await res.json()
+                    else:
+                        raise Exception({"Error":res.status,"message":res.text()})
+            except Exception as e:
+                raise e
+        return data
 
     async def async_post_url(self, url, params = None, json = None, data = None, timeout = 30):
+        data = None
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, params = params, json = json, data = data, timeout = timeout) as res:
-                data = {}
-                if res.status == 200:
-                    data = await res.json()
-                return data
+            try:
+                async with session.post(url, params = params, json = json, data = data, timeout = timeout) as res:
+                    if res.status == 200:
+                        data = await res.json()
+                    else:
+                        raise Exception({"Error":res.status,"message":res.text()})
+            except Exception as e:
+                raise e
+        return data
+            
 
 
     
