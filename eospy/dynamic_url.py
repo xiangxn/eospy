@@ -65,7 +65,7 @@ class DynamicUrl :
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.post(url, params = params, json = json, data = data, timeout = timeout) as res:
-                    if res.status == 200:
+                    if res.status == 200 or res.status == 202:
                         result = await res.json()
                     else:
                         err = await res.json()
