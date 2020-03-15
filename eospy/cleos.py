@@ -480,6 +480,83 @@ class Cleos :
         }
         # push transaction
         return self.push_transaction(trx, creator_privkey, broadcast=broadcast, timeout=timeout)
+    
+    async def async_create_account(self, creator, creator_privkey, acct_name, owner_key, 
+                       active_key='', stake_net='1.0000 EOS', stake_cpu='1.0000 EOS', ramkb=8, permission='active', 
+                       transfer=False, broadcast=True, timeout=30) :
+        ''' '''
+
+        # check account doesn't exist
+        try : 
+            await self.async_get_account(acct_name)
+            #print('{} already exists.'.format(acct_name))
+            raise ValueError('{} already exists.'.format(acct_name))
+        except: 
+            pass
+        if not active_key :
+            active_key = owner_key
+        # create newaccount trx
+        owner_auth = {
+                "threshold": 1,
+                "keys": [{
+                    "key": owner_key,
+                    "weight": 1
+                }],
+                "accounts": [],
+                "waits": []
+            }
+        active_auth ={
+                "threshold": 1,
+                "keys": [{
+                    "key": active_key,
+                    "weight": 1
+                } ],
+                "accounts": [],
+                "waits": []
+            }
+        
+        newaccount_data = await self.async_abi_json_to_bin('eosio', 'newaccount',{'creator' : creator, 'name' : acct_name, 'owner': owner_auth, 'active':active_auth})
+        newaccount_json = {
+            'account' : 'eosio',
+            'name' : 'newaccount',
+            'authorization' : [
+            {
+                'actor' : creator,
+                'permission' : permission
+            } ],
+            'data' : newaccount_data['binargs']
+        }
+        # create buyrambytes trx
+        buyram_data = await self.async_abi_json_to_bin('eosio', 'buyrambytes', {'payer':creator, 'receiver':acct_name, 'bytes': ramkb*1024})
+        buyram_json = {
+            'account' : 'eosio',
+            'name' : 'buyrambytes',
+            'authorization' : [
+                {
+                    'actor' : creator,
+                    'permission' : permission
+                } ],
+            'data' : buyram_data['binargs']
+        }
+        # create delegatebw
+        delegate_data = await self.async_abi_json_to_bin('eosio', 'delegatebw', 
+            {'from': creator, 'receiver': acct_name, 'stake_net_quantity':stake_net, 'stake_cpu_quantity': stake_cpu, 'transfer': transfer })
+        delegate_json = {
+            'account' : 'eosio',
+            'name' : 'delegatebw',
+            'authorization' : [
+                {
+                    'actor' : creator,
+                    'permission' : permission
+                } ],
+            'data' : delegate_data['binargs']
+        }
+
+        trx = {"actions":
+            [newaccount_json, buyram_json, delegate_json]
+        }
+        # push transaction
+        return await self.async_push_transaction(trx, creator_privkey, broadcast=broadcast, timeout=timeout)
 
     def register_producer(self) :
         raise NotImplementedError()
