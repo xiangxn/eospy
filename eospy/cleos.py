@@ -340,7 +340,7 @@ class Cleos :
         }
         data = json.dumps(final_trx, cls=EOSEncoder)
         if broadcast :
-            return await self.async_post('chain.push_transaction', params=None, data=data, timeout=timeout)
+            return await self.async_broadcast(data, timeout=timeout)
         return data
     
     def push_block(self, timeout=30) :
