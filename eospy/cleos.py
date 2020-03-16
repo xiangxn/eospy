@@ -306,10 +306,16 @@ class Cleos :
         return data
     
     def broadcast(self, sign_trx_data, timeout=30):
-        return self.post('chain.push_transaction', params=None, data=sign_trx_data, timeout=timeout)
+        data = sign_trx_data
+        if not isinstance(data, string):
+            data = json.dumps(sign_trx_data, cls=EOSEncoder)
+        return self.post('chain.push_transaction', params=None, data=data, timeout=timeout)
     
     async def async_broadcast(self, sign_trx_data, timeout=30):
-        return await self.async_post('chain.push_transaction', params=None, data=sign_trx_data, timeout=timeout)
+        data = sign_trx_data
+        if not isinstance(data, string):
+            data = json.dumps(sign_trx_data, cls=EOSEncoder)
+        return await self.async_post('chain.push_transaction', params=None, data=data, timeout=timeout)
 
     async def async_push_transaction(self, transaction, keys, broadcast=True, compression='none', timeout=30) :
         ''' parameter keys can be a list of WIF strings or EOSKey objects or a filename to key file'''
