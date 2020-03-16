@@ -5,6 +5,7 @@ import requests
 import asyncio
 import aiohttp
 import json
+from .exceptions import EOSAPIException
 
 class DynamicUrl :
     #def __init__(self, url='http://localhost:8888', version='v1', cache=None) :
@@ -55,7 +56,7 @@ class DynamicUrl :
                         result = await res.json()
                     else:
                         err = await res.json()
-                        raise Exception(err)
+                        raise EOSAPIException(err)
             except Exception as e:
                 raise e
         return result
@@ -69,7 +70,7 @@ class DynamicUrl :
                         result = await res.json()
                     else:
                         err = await res.json()
-                        raise Exception(err)
+                        raise EOSAPIException(err)
             except Exception as e:
                 raise e
         return result

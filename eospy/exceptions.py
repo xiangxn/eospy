@@ -38,3 +38,9 @@ class EOSSetSameCode(Exception):
 class EOSSetSameAbi(Exception):
     ''' Raised when the abi would not change on a set'''
     pass
+
+class EOSAPIException(Exception):
+    def __init__(self, data):
+            self.data = data
+    def __str__(self):
+        return repr(self.data)
