@@ -304,6 +304,28 @@ class Cleos :
         if broadcast :
             return self.post('chain.push_transaction', params=None, data=data, timeout=timeout)
         return data
+    
+    def broadcast(self, transaction, signatures=[], compression="none", timeout=30):
+        chain_info,lib_info = self.get_chain_lib_info()
+        trx = Transaction(transaction, chain_info, lib_info)
+        final_trx = {
+            'compression' : compression,
+            'transaction' : trx.__dict__,
+            'signatures' : signatures
+        }
+        data = json.dumps(final_trx, cls=EOSEncoder)
+        return self.post('chain.push_transaction', params=None, data=data, timeout=timeout)
+    
+    async def async_broadcast(self, sign_transaction, compression="none", timeout=30):
+        chain_info,lib_info = await self.async_get_chain_lib_info()
+        trx = Transaction(sign_transaction['transaction'], chain_info, lib_info)
+        final_trx = {
+            'compression' : compression,
+            'transaction' : trx.__dict__,
+            'signatures' : sign_transaction['signatures']
+        }
+        data = json.dumps(final_trx, cls=EOSEncoder)
+        return await self.async_post('chain.push_transaction', params=None, data=data, timeout=timeout)
 
     async def async_push_transaction(self, transaction, keys, broadcast=True, compression='none', timeout=30) :
         ''' parameter keys can be a list of WIF strings or EOSKey objects or a filename to key file'''
