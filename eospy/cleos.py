@@ -307,13 +307,13 @@ class Cleos :
     
     def broadcast(self, sign_trx_data, timeout=30):
         data = sign_trx_data
-        if not isinstance(data, string):
+        if not isinstance(data, str):
             data = json.dumps(sign_trx_data, cls=EOSEncoder)
         return self.post('chain.push_transaction', params=None, data=data, timeout=timeout)
     
     async def async_broadcast(self, sign_trx_data, timeout=30):
         data = sign_trx_data
-        if not isinstance(data, string):
+        if not isinstance(data, str):
             data = json.dumps(sign_trx_data, cls=EOSEncoder)
         return await self.async_post('chain.push_transaction', params=None, data=data, timeout=timeout)
 
