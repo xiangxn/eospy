@@ -107,6 +107,10 @@ class Cleos :
     def get_abi(self, acct_name, timeout=30) :
         ''' '''
         return self.post('chain.get_abi', params=None, json={'account_name' : acct_name}, timeout=timeout)
+    
+    async def async_get_abi(self, acct_name, timeout=30) :
+        ''' '''
+        return await self.async_post('chain.get_abi', params=None, json={'account_name' : acct_name}, timeout=timeout)
 
     def get_raw_abi(self, acct_name, timeout=30) :
         ''' '''
@@ -119,6 +123,14 @@ class Cleos :
         '''
         json={'account_name' : acct_name, "pos" : pos, "offset" : offset}
         return self.post('history.get_actions', params=None, json=json, timeout=timeout)
+    
+    async def async_get_actions(self, acct_name, pos=-1, offset=-20, timeout=30) :
+        '''
+        POST /v1/history/get_actions
+        {"account_name":"eosnewyorkio","pos":-1,"offset":-20}
+        '''
+        json={'account_name' : acct_name, "pos" : pos, "offset" : offset}
+        return await self.async_post('history.get_actions', params=None, json=json, timeout=timeout)
 
     def get_currency(self, code='eosio.token', symbol='EOS', timeout=30) :
         '''
