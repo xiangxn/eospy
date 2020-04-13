@@ -8,7 +8,7 @@ from nose.tools import raises
 class TestCleos :
 
     def setup(self) :
-        self.ce = eospy.cleos.Cleos('https://api.pennstation.eosnewyork.io:7101')
+        self.ce = eospy.cleos.Cleos('https://api-bostest.blockzone.net')
         self.json_to_bin = {u'to': u'eosio', u'memo': u'test', u'from': u'eosio', u'quantity': u'1.0000 EOS'}
         self.bin_to_json = '0000000000ea30550000000000ea3055102700000000000004454f53000000000474657374'
 
@@ -27,8 +27,8 @@ class TestCleos :
         assert "block_net_limit" in output
 
     def test_get_block(self) :
-        block = self.ce.get_block(1)
-        assert block['block_num'] == 1
+        block = self.ce.get_block(1000)
+        assert block['block_num'] == 1000
 
     @raises(requests.exceptions.HTTPError)
     def test_get_block_invalid(self) :

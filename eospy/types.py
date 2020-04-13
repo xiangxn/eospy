@@ -1,9 +1,9 @@
-
 from .schema import (ActionSchema, PermissionLevelSchema, ChainInfoSchema, BlockInfoSchema, 
                     TransactionSchema,
                     AbiRicardianClauseSchema, AbiTableSchema, AbiSchema, AbiTypeSchema, 
                     AbiActionSchema, AbiStructFieldSchema, AbiStructSchema, AbiErrorMessagesSchema,
-                    AbiExtensionsSchema, AbiVariantsSchema)
+                    AbiExtensionsSchema, AbiVariantsSchema, AuthoritySchema, PermissionLevelWeightSchema,
+                    KeyWeightSchema, WaitWeightSchema)
 import datetime as dt
 import pytz
 from .utils import sha256, string_to_name, name_to_string, int_to_hex, hex_to_int, char_subtraction
@@ -14,22 +14,15 @@ import struct
 import six
 from colander import Invalid
 from collections import OrderedDict
+from .serialize import SerialBuffer
 
-def convert_little_endian(buf, format='q') :
-    ''' '''
-    return struct.pack('<{}'.format(format), buf)
-
-def convert_big_endian(buf, format="I") :
-    ''' '''
-    # return the first value of the tuple that is returned by unpack
-    return struct.unpack('<{}'.format(format), buf)[0]
 
 # json encoder
 class EOSEncoder(json.JSONEncoder) :
     def default(self, o) :
         if isinstance(o, Action) :
             return o.__dict__
-        if isinstance(o, Authorization) :
+        if isinstance(o, PermissionLevel) :
             return o.__dict__
         if isinstance(o, dt.datetime) :
             return o.isoformat()
@@ -42,32 +35,32 @@ class ActionName(Name) : pass
 class TableName(Name) : pass
 class ScopeName(Name) : pass
 
-class Byte(int): 
-    # length of hex str
-    hex_str_len = 2
-class UInt16(int): 
-    # length of hex str
-    hex_str_len = 4
-class UInt32(int): 
-    # length of hex str
-    hex_str_len = 8
-class UInt64(int): 
-    # length of hex str
-    hex_str_len = 16
+class Checksum256:
+    def __init__(self, s):
+        self.value = s
+        
+    def __str__(self):
+        return self.value
+    
+class Uint128(int):pass
 
-class Int16(int): 
-    # length of hex str
-    hex_str_len = 4
-class Int32(int): 
-    # length of hex str
-    hex_str_len = 8
-class Int64(int):
-    # length of hex str
-    hex_str_len = 16
+class PublicKey:
+    def __init__(self, s):
+        self.value = s
+    
+    def __str__(self):
+        return self.value
 
-class Float(float):
-    # length of hex str
-    hex_str_len = 8
+class Byte(int): pass
+class UInt16(int): pass
+class UInt32(int): pass
+class UInt64(int): pass
+
+class Int16(int): pass
+class Int32(int): pass
+class Int64(int): pass
+
+class Float(float): pass
 
 if six.PY3 :
     class long(int) : pass
@@ -76,63 +69,158 @@ class VarUInt :
     def __init__(self, val=""):
         ''' '''
         self._val = val
-        self._b_arr = bytearray()
+        self.buffer = SerialBuffer()
 
-    def _push_byte(self, val) :
-        self._b_arr.append(int(val))
-    
     def encode(self) :
         ''' '''
         # ensure value is an int
         val = int(self._val)
-        buf = int((val) & 0x7f)
-        val >>= 7
-        buf |= (((val > 0) if 1 else 0) << 7)
-        self._push_byte(buf)
-        while val :
-            buf = int((val) & 0x7f)
-            val >>= 7
-            buf |= (((val > 0) if 1 else 0) << 7)
-            self._push_byte(buf)
-        return self._b_arr
-
-    def _pop(self,buf, length):
-        return buf[:length], buf[length:]
+        self.buffer.clear()
+        self.buffer.pushVarUint32(val)
+        return self.buffer.hex()
 
     def decode(self, buf):
-        ''' '''
-        shift = 0
-        result = 0
-        while True:
-            tmp,buf = self._pop(buf, 2)
-            i = hex_to_int(tmp)
-            result |= (i & 0x7f) << shift
-            shift += 7
-            if not(i & 0x80):
-                break
-        return result, buf
+        return buf.getVarUint32()
+    
+class EOSBuffer :
+    def __init__(self, value=None) :
+        if isinstance(value, SerialBuffer):
+            self._buffer = value
+        elif isinstance(value, str):
+            self._value = value
+        else:
+            self._buffer = SerialBuffer()
+            
+    def clear(self):
+        self._buffer.clear()
+    
+    def decode(self, objType, buf=None):
+        if not buf:
+            buf = self._buffer
+        if isinstance(objType, UInt32):
+            val = buf.getUint32()
+        elif isinstance(objType, UInt16):
+            val = buf.getUint16()
+        elif isinstance(objType, VarUInt):
+            val = objType.decode(buf)
+        elif(isinstance(objType, Byte) or
+             isinstance(objType, bool)) :
+            val = buf.get()
+        elif isinstance(objType, Float):
+            val = buf.getFloat64()
+        elif(isinstance(objType, int) or
+             isinstance(objType, long)) :
+            val = buf.getInt32()
+        elif(isinstance(objType, Checksum256)):
+            val = buf.getChecksum256()
+        elif(isinstance(objType, Uint128)):
+            val = buf.getUint128()
+        elif(isinstance(objType, PublicKey)):
+            val = buf.getPublicKey()
+        elif (isinstance(objType, Name) or
+             isinstance(objType, AccountName) or
+             isinstance(objType, PermissionName) or
+             isinstance(objType, ActionName) or
+             isinstance(objType, TableName) or
+             isinstance(objType, ScopeName) ) :
+            val = buf.getName()
+        elif isinstance(objType, str):
+            val = buf.getString()
+        elif(isinstance(objType, list)) :
+            # get count(VarUint)
+            val = []
+            length = buf.getVarUint32()
+            while len(val) < length:
+                out = self.decode(objType[0], buf)
+                val.append(out)
+        else:
+            raise EOSBufferInvalidType("Cannot decode type: {}".format(type(objType)))
+        return val
+
+    def encode(self, val=None, buf=None) :
+        if val is None :
+            val = self._value
+        if not buf:
+            buf = self._buffer
+        if (isinstance(val, Name) or
+           isinstance(val, AccountName) or
+           isinstance(val, PermissionName) or
+           isinstance(val, ActionName) or
+           isinstance(val, TableName) or
+           isinstance(val, ScopeName) ) :
+            buf.pushName(val)
+        elif(isinstance(val, str)) :
+            buf.pushString(val)
+        elif(isinstance(val, Byte) or
+             isinstance(val, bool)) :
+            buf.pushBool(val)
+        elif(isinstance(val, UInt16)) :
+            buf.pushUint16(val)
+        elif(isinstance(val,UInt32)) :
+            buf.pushUint32(val)
+        elif(isinstance(val,UInt64)) :
+            buf.pushUint64(val)
+        elif(isinstance(val, Uint128)):
+            buf.pushUint128(val)
+        elif(isinstance(val, Checksum256)):
+            buf.pushChecksum256(str(val))
+        elif(isinstance(val, PublicKey)):
+            buf.pushPublicKey(str(val))
+        elif(isinstance(val, Float)):
+            buf.pushFloat32(val)
+        elif(isinstance(val,VarUInt)) :
+            buf.pushVarUint32(val)
+        elif(isinstance(val, int) or
+             isinstance(val, long)) :
+            buf.pushInt32(val)
+        elif(isinstance(val, Action) or 
+             isinstance(val, AbiStruct) or 
+             isinstance(val, AbiStructField) or 
+             isinstance(val, AbiType) or
+             isinstance(val, AbiAction) or 
+             isinstance(val, AbiTable) or
+             isinstance(val, AbiRicardianClauses) or 
+             isinstance(val, AbiErrorMessages) or
+             isinstance(val, AbiExtensions) or 
+             isinstance(val, AbiVariants) or
+             isinstance(val, Asset) or
+             isinstance(val, Authority) or
+             isinstance(val, PermissionLevelWeight) or
+             isinstance(val, WaitWeight) or
+             isinstance(val, KeyWeight) or
+             isinstance(val, PermissionLevel)):
+            val.encode(buf)
+        elif(isinstance(val, list)) :
+            buf.pushVarUint32(len(val))
+            for item in val :
+                self.encode(item, buf)
+        else :
+            raise EOSBufferInvalidType('Cannot encode type: {}'.format(type(val)))
         
 class BaseObject(object) :
-    def __init__(self, d) :
+    def __init__(self, d=None) :
         ''' '''
+        self._buffer = EOSBuffer()
         try:
-            self._obj = self._validator.deserialize(d)
+            if d:
+                self._obj = self._validator.deserialize(d)
         except Invalid:
             raise EOSInvalidSchema('Unable to process schema for {}'.format(type(self)))
         # instantiate the class
-        for k,v in self._obj.items() :
-            setattr(self, k, v)
-        # clean up
-        del self._obj
-        del self._validator
+        if hasattr(self, "_obj"):
+            for k,v in self._obj.items() :
+                setattr(self, k, v)
+            # clean up
+            del self._obj
+            del self._validator
         
     def __repr__(self) :
         ''' '''
         return '{}({})'.format(self.__class__, self.__dict__)
         
-    def _encode_buffer(self, value) :
+    def _encode_buffer(self, value, buf=None) :
         ''' '''
-        return EOSBuffer(value).encode()
+        self._buffer.encode(value, buf)
 
     def _create_obj_array(self, arr, class_type) :
         ''' '''
@@ -140,6 +228,15 @@ class BaseObject(object) :
         for item in arr :
             new_arr.append(class_type(item))
         return new_arr
+    
+    def getSerialize(self):
+        return self._buffer._buffer.hex() 
+    
+    def getBuffer(self):
+        return self._buffer._buffer
+    
+    def clearBuffer(self):
+        self._buffer.clear()
 
 class Action(BaseObject) :
     def __init__(self, d) :
@@ -147,18 +244,17 @@ class Action(BaseObject) :
         self._validator = ActionSchema()
         super(Action, self).__init__(d)
         # setup permissions
-        self.authorization = self._create_obj_array(self.authorization, Authorization)
+        self.authorization = self._create_obj_array(self.authorization, PermissionLevel)
         
-    def encode(self) :
+    def encode(self, buf=None) :
         ''' '''
-        acct = self._encode_buffer(AccountName(self.account))
-        name = self._encode_buffer(Name(self.name))
-        auth = self._encode_buffer(self.authorization)
-        # need to figure out how to process data
-        # get length
-        data_len = self._encode_buffer(VarUInt(len(self.data)/2))
-        data =  data_len + self.data
-        return '{}{}{}{}'.format(acct, name, auth, data)
+        if not buf:
+            buf = self._buffer._buffer
+        buf.pushName(self.account)
+        buf.pushName(self.name)
+        self._encode_buffer(self.authorization, buf)
+        buf.pushVarUint32(len(self.data)/2)
+        buf.pushHex(self.data)
 
 class Asset :
     def __init__(self, value, precision=4) :
@@ -191,48 +287,28 @@ class Asset :
         except IndexError:
             raise IndexError('Invalid string format given. Must be in the formst <float> <currency_type>')
 
-    def _string_to_symbol(self):
+    def encode(self, buf):
         ''' '''
-        rslt = 0
-        cnt = 0
-        while cnt < len(self.symbol):
-            letter = self.symbol[cnt]
-            if letter >= 'A' or letter <= 'Z':
-                l = ord(letter)
-                rslt |= (UInt64(l) << (8*(cnt+1)))
-            else:
-                raise ValueError("{} contains an invalid symbol. Must be [A-Z].".format(self.symbol))
-            
-            cnt += 1
-        rslt |= UInt64(self.precision)
-        return EOSBuffer(UInt64(rslt)).encode()
-
-    def encode(self):
-        ''' '''
-        power = '1'.ljust(self.precision + len('1'), '0')
-        amount = EOSBuffer(UInt64(self.amount * UInt64(power))).encode()
-        symbol = self._string_to_symbol()
-        return '{amount}{symbol}'.format(amount=amount, symbol=symbol)
+        if buf:
+            buf.pushAsset("{} {}".format(self.amount, self.symbol), self.precision)
 
 class AbiType(BaseObject):
     def __init__(self, d):
         self._validator = AbiTypeSchema()
         super(AbiTypes, self).__init__(d)
     
-    def encode(self):
-        new_type_name = self._encode_buffer(self.new_type_name)
-        type = self._encode_buffer(self.type)
-        return '{}{}'.format(new_type_name, type)
+    def encode(self, buf):
+        self._encode_buffer(self.new_type_name, buf)
+        self._encode_buffer(self.type, buf)
 
 class AbiStructField(BaseObject):
     def __init__(self, d):
         self._validator = AbiStructFieldSchema()
         super(AbiStructField, self).__init__(d)
     
-    def encode(self):
-        name = self._encode_buffer(self.name)
-        type = self._encode_buffer(self.type)
-        return '{}{}'.format(name, type)
+    def encode(self, buf):
+        self._encode_buffer(self.name, buf)
+        self._encode_buffer(self.type, buf)
 
 class AbiStruct(BaseObject):
     def __init__(self, d):
@@ -240,45 +316,41 @@ class AbiStruct(BaseObject):
         super(AbiStruct, self).__init__(d)
         self.fields = self._create_obj_array(self.fields, AbiStructField)
     
-    def encode(self):
-        name = self._encode_buffer(self.name)
-        base = self._encode_buffer(self.base)
-        fields = self._encode_buffer(self.fields)
-        return '{}{}{}'.format(name, base, fields)
+    def encode(self, buf):
+        self._encode_buffer(self.name, buf)
+        self._encode_buffer(self.base, buf)
+        self._encode_buffer(self.fields, buf)
 
 class AbiAction(BaseObject):
     def __init__(self, d):
         self._validator = AbiActionSchema()
         super(AbiAction, self).__init__(d)
     
-    def encode(self):
-        name = self._encode_buffer(Name(self.name))
-        type = self._encode_buffer(self.type)
-        ricardian_contract = self._encode_buffer(self.ricardian_contract)
-        return '{}{}{}'.format(name, type, ricardian_contract)
+    def encode(self, buf):
+        self._encode_buffer(Name(self.name), buf)
+        self._encode_buffer(self.type, buf)
+        self._encode_buffer(self.ricardian_contract, buf)
 
 class AbiTable(BaseObject):
     def __init__(self, d):
         self._validator = AbiTableSchema()
         super(AbiTable, self).__init__(d)
     
-    def encode(self):
-        name = self._encode_buffer(Name(self.name))
-        index_type = self._encode_buffer(self.index_type)
-        key_names = self._encode_buffer(self.key_names)
-        key_types = self._encode_buffer(self.key_types)
-        type = self._encode_buffer(self.type)
-        return '{}{}{}{}{}'.format(name, index_type, key_names, key_types, type)
+    def encode(self, buf):
+        self._encode_buffer(Name(self.name), buf)
+        self._encode_buffer(self.index_type, buf)
+        self._encode_buffer(self.key_names, buf)
+        self._encode_buffer(self.key_types, buf)
+        self._encode_buffer(self.type, buf)
 
 class AbiRicardianClauses(BaseObject):
     def __init__(self, d):
         self._validator = AbiRicardianClauseSchema()
         super(AbiRicardianClauses, self).__init__(d)
     
-    def encode(self):
-        id = self._encode_buffer(self.id)
-        body = self._encode_buffer(self.body)
-        return '{}{}'.format(id, body)
+    def encode(self, buf):
+        self._encode_buffer(self.id, buf)
+        self._encode_buffer(self.body, buf)
 
 class AbiErrorMessages(BaseObject):
     # TODO implement encode
@@ -306,6 +378,60 @@ class AbiVariants(BaseObject):
     
     def encode():
         raise NotImplementedError
+    
+class KeyWeight(BaseObject):
+    def __init__(self, d=None):
+        self._validator = KeyWeightSchema()
+        super(KeyWeight, self).__init__(d)
+        
+    def encode(self, buf=None):
+        self._encode_buffer(PublicKey(self.key), buf)
+        self._encode_buffer(UInt16(self.weight), buf)
+        
+class WaitWeight(BaseObject):
+    def __init__(self, d=None):
+        self._validator = WaitWeightSchema()
+        super(WaitWeight, self).__init__(d)
+        
+    def encode(self, buf=None):
+        self._encode_buffer(UInt32(self.wait_sec), buf)
+        self._encode_buffer(UInt16(self.weight), buf)
+        
+class PermissionLevel(BaseObject):
+    def __init__(self, d=None) :
+        ''' '''
+        # create validator
+        self._validator = PermissionLevelSchema()
+        super(PermissionLevel, self).__init__(d)
+
+    def encode(self, buf) :
+        ''' '''
+        self._encode_buffer(AccountName(self.actor), buf)
+        self._encode_buffer(PermissionName(self.permission), buf)
+        
+class PermissionLevelWeight(BaseObject):
+    def __init__(self, d=None):
+        self._validator = PermissionLevelWeightSchema()
+        super(PermissionLevelWeight, self).__init__(d)
+        
+    def encode(self, buf=None):
+        self._encode_buffer(PermissionLevel(self.permission), buf)
+        self._encode_buffer(UInt16(self.weight), buf)
+        
+class Authority(BaseObject):
+    def __init__(self, d=None):
+        self._validator = AuthoritySchema()
+        super(Authority, self).__init__(d)
+        if d:
+            self.keys = self._create_obj_array(self.keys, KeyWeight)
+            self.accounts = self._create_obj_array(self.accounts, PermissionLevelWeight)
+            self.waits = self._create_obj_array(self.waits, WaitWeight)
+        
+    def encode(self, buf=None):
+        self._encode_buffer(UInt32(self.threshold), buf)
+        self._encode_buffer(self.keys, buf)
+        self._encode_buffer(self.accounts, buf)
+        self._encode_buffer(self.waits, buf)
 
 class Abi(BaseObject):
     _abi_map = {
@@ -318,6 +444,7 @@ class Abi(BaseObject):
         'uint16': UInt16(),
         'uint32': UInt32(),
         'uint64': UInt64(),
+        'uint128': Uint128(),
         'int8': Byte(),       # NotImplemented
         'int16': Int16(),    # NotImplemented
         'int32': Int32(),    # NotImplemented
@@ -326,16 +453,18 @@ class Abi(BaseObject):
         # 'varuint32': VarUInt # NotImplemented
         # complex
         'asset' : Asset("1.0000 EOS"),
-        # 'checksum256': str,  # NotImplemented
+        'checksum256': Checksum256(""),  # NotImplemented
         # 'block_timestamp_type': UInt64, # NotImplemented
         # 'time_point': UInt64, # NotImplemented
         # 'connector': str, # NotImplemented
-        # 'public_key': str, # NotImplemented
-        # 'authority': str, # NotImplemented 
+        'public_key': PublicKey(""), # NotImplemented
+        'authority': Authority(), # NotImplemented 
         # 'block_header': str, # NotImplemented
         # 'bytes': str, # NotImplemented
-        # 'permission_level': str, # NotImplemented
-        # 'permission_level_weight': str, #NotImplemented
+        'permission_level': PermissionLevel(), # NotImplemented
+        'permission_level_weight': PermissionLevelWeight(), #NotImplemented
+        'key_weight': KeyWeight(),
+        'wait_weight': WaitWeight()
     }
 
     def __init__(self,d):
@@ -389,31 +518,29 @@ class Abi(BaseObject):
         return parameters
 
     def get_raw(self):
-        version = self._encode_buffer(self.version)
-        # encode types
-        types = self._encode_buffer(self.types)
-        structs = self._encode_buffer(self.structs)
-        actions = self._encode_buffer(self.actions)
-        tables = self._encode_buffer(self.tables)
-        ricardian_clauses = self._encode_buffer(self.ricardian_clauses)
-        error_messages = self._encode_buffer(self.error_messages)
-        abi_extensions = self._encode_buffer(self.abi_extensions)
-        variants = self._encode_buffer(self.variants)
-        return '{}{}{}{}{}{}{}{}{}'.format(version, types, structs, actions, tables, 
-                                                ricardian_clauses, error_messages, abi_extensions, 
-                                                variants)
+        self.clearBuffer()
+        self._encode_buffer(self.version)
+        self._encode_buffer(self.types)
+        self._encode_buffer(self.structs)
+        self._encode_buffer(self.actions)
+        self._encode_buffer(self.tables)
+        self._encode_buffer(self.ricardian_clauses)
+        self._encode_buffer(self.error_messages)
+        self._encode_buffer(self.abi_extensions)
+        self._encode_buffer(self.variants)
+        return self.getSerialize()
 
     def encode(self):
         ''' '''
         raw_abi = self.get_raw()
+        self.clearBuffer()
         # divide by two because it is hex
-        length = self._encode_buffer(VarUInt(len(raw_abi)/2))
-        return length + raw_abi
+        self._encode_buffer(VarUInt(len(raw_abi)/2))
+        return "{}{}".format(self.getSerialize(), raw_abi)
     
     def json_to_bin(self, name, data):
         # act = self.get_action(name)
         params = self.get_action_parameters(name)
-        bin_buffer = ''
         for field in data:
             # create EOSBuffer with value as a type of field
             if isinstance(params[field], list):
@@ -422,26 +549,16 @@ class Abi(BaseObject):
                 for f in data[field]: 
                     print(f)
                     arr.append(field_type(f))
-                field_buffer = EOSBuffer(arr)
+                self._encode_buffer(arr)
             else:
                 field_type = type(params[field])
-                field_buffer = EOSBuffer(field_type(data[field]))
+                self._encode_buffer(field_type(data[field]))
 
-            bin_buffer += field_buffer.encode()
+        bin_buffer = self.getSerialize()
+        self.clearBuffer()
         return bin_buffer
 
-class Authorization(BaseObject):
-    def __init__(self, d) :
-        ''' '''
-        # create validator
-        self._validator = PermissionLevelSchema()
-        super(Authorization, self).__init__(d)
 
-    def encode(self) :
-        ''' '''
-        actor = self._encode_buffer(AccountName(self.actor))
-        perms = self._encode_buffer(PermissionName(self.permission))
-        return '{}{}'.format(actor, perms)
 
 class ChainInfo(BaseObject) :
     def __init__(self, d) :
@@ -471,27 +588,21 @@ class Transaction(BaseObject) :
         # parse actions
         self.actions = self._create_obj_array(self.actions, Action)
     
-    def _encode_hdr(self) :
-        ''' '''
-        # convert
-        exp_ts = (self.expiration - dt.datetime(1970, 1, 1, tzinfo=self.expiration.tzinfo)).total_seconds()
-        exp = self._encode_buffer(UInt32(exp_ts))
-        ref_blk = self._encode_buffer(UInt16(self.ref_block_num & 0xffff))
-        ref_block_prefix = self._encode_buffer(UInt32(self.ref_block_prefix))
-        net_usage_words = self._encode_buffer(VarUInt(self.net_usage_words))
-        max_cpu_usage_ms = self._encode_buffer(Byte(self.max_cpu_usage_ms))
-        delay_sec = self._encode_buffer(VarUInt(self.delay_sec))
-        # create hdr buffer
-        hdr = '{}{}{}{}{}{}'.format(exp, ref_blk, ref_block_prefix, net_usage_words, max_cpu_usage_ms, delay_sec)
-        return hdr
-
     def encode(self) :
         ''' '''
-        hdr_buf = self._encode_hdr()
-        context_actions = self._encode_buffer(self.context_free_actions)
-        actions = self._encode_buffer(self.actions)
-        trans_exts = self._encode_buffer(self.transaction_extensions)
-        return bytearray.fromhex(hdr_buf + context_actions + actions + trans_exts)
+        exp_ts = (self.expiration - dt.datetime(1970, 1, 1, tzinfo=self.expiration.tzinfo)).total_seconds()
+        self._encode_buffer(UInt32(exp_ts))
+        self._encode_buffer(UInt16(self.ref_block_num & 0xffff))
+        self._encode_buffer(UInt32(self.ref_block_prefix))
+        self._encode_buffer(VarUInt(self.net_usage_words))
+        self._encode_buffer(Byte(self.max_cpu_usage_ms))
+        self._encode_buffer(VarUInt(self.delay_sec))
+        
+        
+        self._encode_buffer(self.context_free_actions)
+        self._encode_buffer(self.actions)
+        self._encode_buffer(self.transaction_extensions)
+        return self.getBuffer()
         
     def get_id(self) :
         return sha256(self.encode())
@@ -504,51 +615,44 @@ class PackedTransaction:
         self._is_unpacked = False
         self._unpacked_trx = OrderedDict()
         
-    def _decode_buffer(self, objType, buf): 
-        ''' '''
-        eBuf = EOSBuffer("")
-        return eBuf.decode(objType, buf)
-
     def _decode_header(self, buf):
         ''' '''
-        buf = self._packed_trx
         # get expiration buffer
-        (exp,buf) = self._decode_buffer(UInt32(), buf)
+        exp = buf.decode(UInt32())
         # get expiration in UTC
         exp_dt = dt.datetime.utcfromtimestamp(exp)
         self._unpacked_trx['expiration'] = exp_dt.strftime("%Y-%m-%dT%H:%M:%S")
         # get ref_block
-        (ref_blk, buf) = self._decode_buffer(UInt16(), buf)
+        ref_blk = buf.decode(UInt16())
         self._unpacked_trx['ref_block_num'] = ref_blk
         # get ref_block_prefix
-        (ref_blk_pre, buf) = self._decode_buffer(UInt32(), buf)
+        ref_blk_pre = buf.decode(UInt32())
         self._unpacked_trx['ref_block_prefix'] = ref_blk_pre
         # get net usage 
-        (max_net_usage, buf) = self._decode_buffer(VarUInt(), buf)
+        max_net_usage = buf.decode(VarUInt())
         self._unpacked_trx['max_net_usage_words'] = max_net_usage
         # get cpu usage
-        (max_cpu_usage, buf) = self._decode_buffer(Byte(), buf)
+        max_cpu_usage = buf.decode(Byte())
         self._unpacked_trx['max_cpu_usage_ms'] = max_cpu_usage
         # get delay sec
-        (delay_sec, buf) = self._decode_buffer(VarUInt(), buf)
+        delay_sec = buf.decode(VarUInt())
         self._unpacked_trx['delay_sec'] = delay_sec
-        return buf
 
     def decode_actions(self, buf):
         ''' '''
         # get length of action array
         actions = []
-        (length, act_buf) = self._decode_buffer(VarUInt(), buf)
+        length = buf.decode(VarUInt())
         cnt = 0
         # loop through array
         while cnt < length and length:
             # process action account/name
-            (acct_name, act_buf) = self._decode_buffer(AccountName(), act_buf)
-            (action_name, act_buf) = self._decode_buffer(ActionName(), act_buf)
+            acct_name = buf.decode(AccountName())
+            action_name = buf.decode(ActionName())
             # get authorizations
-            (auth, act_buf) = self.decode_authorizations(act_buf)
+            auth = self.decode_authorizations(buf)
             # get data length
-            (hex_data_len, act_buf) = self._decode_buffer(VarUInt(), act_buf)
+            hex_data_len = buf.decode(VarUInt())
             # get abi information
             contract_abi = self._cleos.get_abi(acct_name)
             abi = Abi(contract_abi["abi"])
@@ -561,7 +665,7 @@ class PackedTransaction:
             # save data for hex_data
             data_diff = act_buf
             for a in abi_struct:
-                (act_data, act_buf) = self._decode_buffer(abi_struct[a], act_buf)
+                act_data = buf.decode(abi_struct[a])
                 data[a] = act_data
             act = OrderedDict({
                 'account': acct_name,
@@ -574,43 +678,44 @@ class PackedTransaction:
             # increment count
             cnt += 1
 
-        return (actions, act_buf)
+        return actions
 
     def decode_authorizations(self, buf):
         ''' '''
         auths = []
-        (length, auth_buf) = self._decode_buffer(VarUInt(), buf)
+        length = buf.decode(VarUInt())
         cnt = 0
         while cnt < length and length:
             # process action account/name
-            (acct_name, auth_buf) = self._decode_buffer(AccountName(), auth_buf)
-            (perm, auth_buf) = self._decode_buffer(ActionName(), auth_buf)
+            acct_name = buf.decode(AccountName())
+            perm = buf.decode(ActionName())
             auth = OrderedDict({
                 'actor': acct_name,
                 'permission': perm,
             })
             auths.append(auth)
             cnt += 1
-        return (auths, auth_buf)
+        return auths
 
     # placeholder until context_free_actions are implemented. Might be able to use self.decode_actions
     def decode_context_actions(self, buf):
         ''' '''
-        (length, ctx_buf) = self._decode_buffer(VarUInt(), buf)
+        length = buf.decode(VarUInt(), buf)
         if length > 0:
             raise NotImplementedError("Currently eospy does not support context_free_actions")
         # get length of action array
-        return (length, ctx_buf)
+        context_actions = []
+        return context_actions
 
     # placeholder until context_free_actions are implemented. Might be able to use self.decode_actions
     def decode_trx_extensions(self, buf):
         ''' '''
         trx_ext = []
-        (length, ctx_buf) = self._decode_buffer(VarUInt(), buf)
+        length = buf.decode(VarUInt())
         if length > 0:
             raise NotImplementedError("Currently eospy does not support transaction extensions")
         # get length of action array
-        return (trx_ext, ctx_buf)
+        return trx_ext
 
     def get_id(self):
         ''' '''
@@ -621,169 +726,18 @@ class PackedTransaction:
         # only unpack once
         if not self._is_unpacked:    
             # decode the header and get the rest of the trx back
-            trx_buf = self._decode_header(self._packed_trx)
+            trx_buf = EOSBuffer(SerialBuffer(bytearray.fromhex(self._packed_trx)))
+            self._decode_header(trx_buf)
             # process list of context free actions
-            (context_actions, trx_buf) = self.decode_context_actions(trx_buf)
+            context_actions = self.decode_context_actions(trx_buf)
             self._unpacked_trx['context_free_actions'] = context_actions
             # process actions
-            (actions, trx_buf) = self.decode_actions(trx_buf)
+            actions = self.decode_actions(trx_buf)
             self._unpacked_trx['actions'] = actions
             # process transaction extensions
-            (trx_ext, trx_buf)= self.decode_trx_extensions(trx_buf)
+            trx_ext = self.decode_trx_extensions(trx_buf)
             self._unpacked_trx['transaction_extensions'] = trx_ext 
             # set boolean
             self._is_unpacked = True
         return self._unpacked_trx
 
-class EOSBuffer :
-    def __init__(self, v) :
-        self._value = v
-        self._count = 0
-    
-    def _decode_number(self, val, format='L'):
-        byte_val = binascii.unhexlify(val)
-        return convert_big_endian(byte_val, format)
-
-    def _decode_float(self, val, format='f'):
-        byte_val = binascii.unhexlify(val)
-        return struct.unpack(">{}".format(format), byte_val)
-
-    def _decode_name(self, val, format='Q'):
-        ''' '''
-        num = self._decode_number(val, format)
-        return name_to_string(num)
-    
-    def _decode_str(self, val):
-        ''' '''
-        # get length
-        vu = VarUInt()
-        (length,val) = vu.decode(val)
-        string = ''
-        leftover = val
-        # if there is data parse it
-        if length > 0: 
-            (str_data,leftover) = self._splice_buf(val, length*2)
-            string = binascii.unhexlify(str_data).decode()
-        return (string, leftover)
-
-    def _splice_buf(self, buf, length):
-        return buf[:length], buf[length:]
-
-    def _write_number(self, val, format='q') :
-        ''' '''
-        le = convert_little_endian(val, format)
-        return binascii.hexlify(le).decode()
-
-    def _write_name(self, w_str) :
-        ''' '''
-        val = string_to_name(w_str)
-        le = convert_little_endian(val, 'Q')
-        return binascii.hexlify(le).decode()
-
-    def _write_str(self, w_str) :
-        b = bytearray()
-        length = VarUInt(len(w_str)).encode()
-        b.extend(map(ord, w_str))
-        return binascii.hexlify(length + b).decode()
-
-    def _write_varuint(self, vuint) :
-        buf = vuint.encode()
-        return binascii.hexlify(buf).decode()
-
-    def decode(self, objType, buf=None):
-        leftover = ""
-        if not buf:
-            buf = self._value
-        if isinstance(objType, UInt32):
-            (val, leftover) = self._splice_buf(buf, objType.hex_str_len)
-            val = self._decode_number(val, 'I')
-        elif isinstance(objType, UInt16):
-            (val, leftover) = self._splice_buf(buf, objType.hex_str_len)
-            val = self._decode_number(val, 'H')
-        elif isinstance(objType, VarUInt):
-            (val, leftover) = objType.decode(buf)
-        elif(isinstance(objType, Byte) or
-             isinstance(objType, bool)) :
-            (hex_str, leftover) = self._splice_buf(buf, 2)
-            val = hex_to_int(hex_str)
-        elif isinstance(objType, Float):
-            (val, leftover) = self._splice_buf(buf, objType.hex_str_len)
-            val = self._decode_float(val, 'f')
-        elif(isinstance(objType, int) or
-             isinstance(objType, long)) :
-            (val, leftover) = self._splice_buf(buf, objType.hex_str_len)
-            val = self._decode_number(val, 'q')
-        elif (isinstance(objType, Name) or
-             isinstance(objType, AccountName) or
-             isinstance(objType, PermissionName) or
-             isinstance(objType, ActionName) or
-             isinstance(objType, TableName) or
-             isinstance(objType, ScopeName) ) :
-            (val, leftover) = self._splice_buf(buf, objType.hex_str_len)
-            val = self._decode_name(val)
-        elif isinstance(objType, str):
-            (val, leftover) = self._decode_str(buf)
-        elif(isinstance(objType, list)) :
-            # get count(VarUint)
-            val = []
-            (length, leftover) = VarUInt("").decode(buf)
-            while len(val) < length:
-                (out, leftover) = self.decode(objType[0], leftover)
-                val.append(out)
-        else:
-            raise EOSBufferInvalidType("Cannot decode type: {}".format(type(objType)))
-        
-        return (val, leftover)
-
-    def encode(self, val=None) :
-        if not val :
-            val = self._value
-        if (isinstance(val, Name) or
-           isinstance(val, AccountName) or
-           isinstance(val, PermissionName) or
-           isinstance(val, ActionName) or
-           isinstance(val, TableName) or
-           isinstance(val, ScopeName) ) :
-            val = self._write_name(val)
-            return val
-        elif(isinstance(val, str)) :
-            return self._write_str(val)
-        elif(isinstance(val, Byte) or
-             isinstance(val, bool)) :
-            #return self._write_number(val, '?')
-            return int_to_hex(val)
-        elif(isinstance(val, UInt16)) :
-            return self._write_number(val, 'H')
-        elif(isinstance(val,UInt32)) :
-            return self._write_number(val, 'I')
-        elif(isinstance(val,UInt64)) :
-            return self._write_number(val, 'q')
-        elif(isinstance(val, Float)):
-            return self._write_number(val, 'f')
-        elif(isinstance(val,VarUInt)) :
-            # temp encoding
-            return self._write_varuint(val)
-        elif(isinstance(val, int) or
-             isinstance(val, long)) :
-            return self._write_number(val, 'l')
-        elif(isinstance(val, Action) or 
-             isinstance(val, AbiStruct) or 
-             isinstance(val, AbiStructField) or 
-             isinstance(val, AbiType) or
-             isinstance(val, AbiAction) or 
-             isinstance(val, AbiTable) or
-             isinstance(val, AbiRicardianClauses) or 
-             isinstance(val, AbiErrorMessages) or
-             isinstance(val, AbiExtensions) or 
-             isinstance(val, AbiVariants) or
-             isinstance(val, Asset) or
-             isinstance(val, Authorization)):
-            return val.encode()
-        elif(isinstance(val, list)) :
-            buf = self._write_varuint(VarUInt(len(val))) 
-            for item in val :
-                e_item = self.encode(item)
-                buf = '{}{}'.format(buf, e_item)
-            return buf
-        else :
-            raise EOSBufferInvalidType('Cannot encode type: {}'.format(type(val)))
