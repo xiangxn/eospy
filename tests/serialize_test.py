@@ -24,6 +24,7 @@ class TestSerialize:
         
         d1 = "2019-01-01T08:08:08"
         d2 = "2020-03-03T15:17:13"
+        d3 = "2020-01-20T00:00:00"
 
         d = dt.datetime.strptime(d2, "%Y-%m-%dT%H:%M:%S")
         v1 = dateToTimePoint(d2)
@@ -64,6 +65,17 @@ class TestSerialize:
         hexs = abi.json_to_bin("newaccount", data)
         #print(hexs)
         assert "309d9146c585b33b204fd179613b5a9801000000010002271e00bde7ea56bfa78210ebb026ec9e16d6d02948880e7a39589b62ba4186340100000001000000010002271e00bde7ea56bfa78210ebb026ec9e16d6d02948880e7a39589b62ba41863401000000" == hexs
+        
+        bitsfleamain_abi = self.ce.get_abi('bitsfleamain')
+        abi = Abi(bitsfleamain_abi['abi'])
+        data = {
+            "uid": 0,
+            "product": {"pid":0,"uid":0,"title":"title test","description":"description 测试","photos":["photos 测试"],"category":1,"status":0,"is_new":False,"is_returns":True,"reviewer":0,"sale_method":0,"price":"100.0000 BOS","transaction_method":1,"stock_count":1,"is_retail":False,"postage":"1.0000 BOS","position":"位置","release_time":"2020-01-20T00:00:00"},
+            "pa": None
+        }
+        hexs = abi.json_to_bin("publish", data)
+        #print(hexs)
+        assert "00000000000000000000000000000000000000000a7469746c652074657374126465736372697074696f6e20e6b58be8af95010d70686f746f7320e6b58be8af95010000000000000000000000000100000000000000000040420f000000000004424f5300000000010100000000102700000000000004424f530000000006e4bd8de7bdae80ed245e00" == hexs
     
     def test_uint128(self):
         data = decimalToBinary(16, "36893488153293773579")
@@ -112,7 +124,7 @@ class TestSerialize:
         buffer.pushPublicKey("PUB_K1_5BiYrPwXwFmrjLQ3ZUa3BX9crdomJNfYdu6uC863XAXrJJkRbz")
         buffer.pushUint128("36893488153293773579")
         buffer.pushTimePoint("2020-03-03T15:17:13")
-        buffer.pushTimePointSec("2020-03-03T15:17:13")
+        buffer.pushTimePointSec("2020-01-20T00:00:00")
         buffer.restartRead()
         
         assert 16 == buffer.getUint16()
@@ -133,6 +145,6 @@ class TestSerialize:
         assert "PUB_K1_5BiYrPwXwFmrjLQ3ZUa3BX9crdomJNfYdu6uC863XAXrJJkRbz" == buffer.getPublicKey(False)
         assert "36893488153293773579" == buffer.getUint128()
         assert "2020-03-03T15:17:13" == buffer.getTimePoint()
-        assert "2020-03-03T15:17:13" == buffer.getTimePointSec()
+        assert "2020-01-20T00:00:00" == buffer.getTimePointSec()
         
         

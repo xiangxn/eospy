@@ -310,15 +310,17 @@ def binaryToDecimal(bignum, minDigits = 1):
     return result.decode("ascii")
 
 def dateParse(date):
-    d = dt.datetime.strptime(date, "%Y-%m-%dT%H:%M:%S")
-    return time.mktime(d.timetuple())
+    #if not date.endswith("Z"):
+    #    date += "Z"
+    d = dt.datetime.strptime(date, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.utc)
+    return d.timestamp()
 
 def dateToTimePoint(date):
     val = dateParse(date)
     return int(val * 1000)
 
 def timePointToDate(ms):
-    val = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ms/1000))
+    val = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ms/1000))
     return val
 
 def dateToTimePointSec(date):
@@ -326,6 +328,6 @@ def dateToTimePointSec(date):
     return int(val)
 
 def timePointSecToDate(sec):
-    val = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(sec))
+    val = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(sec))
     return val
     

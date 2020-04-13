@@ -62,6 +62,20 @@ class Int64(int): pass
 
 class Float(float): pass
 
+class TimePointSec:
+    def __init__(self, s):
+        self.value = s
+        
+    def __str__(self):
+        return self.value
+    
+class TimePoint:
+    def __init__(self, s):
+        self.value = s
+        
+    def __str__(self):
+        return self.value
+
 if six.PY3 :
     class long(int) : pass
 
@@ -78,6 +92,10 @@ class VarUInt :
         self.buffer.clear()
         self.buffer.pushVarUint32(val)
         return self.buffer.hex()
+    
+    def encode(self, buf):
+        val = int(self._val)
+        buf.pushVarUint32(val)
 
     def decode(self, buf):
         return buf.getVarUint32()
@@ -151,8 +169,9 @@ class EOSBuffer :
             buf.pushName(val)
         elif(isinstance(val, str)) :
             buf.pushString(val)
-        elif(isinstance(val, Byte) or
-             isinstance(val, bool)) :
+        elif(isinstance(val, Byte)):
+            buf.push(val)
+        elif(isinstance(val, bool)) :
             buf.pushBool(val)
         elif(isinstance(val, UInt16)) :
             buf.pushUint16(val)
@@ -166,10 +185,14 @@ class EOSBuffer :
             buf.pushChecksum256(str(val))
         elif(isinstance(val, PublicKey)):
             buf.pushPublicKey(str(val))
+        elif(isinstance(val, TimePointSec)):
+            buf.pushTimePointSec(str(val))
+        elif(isinstance(val, TimePoint)):
+            buf.pushTimePoint(str(val))
         elif(isinstance(val, Float)):
             buf.pushFloat32(val)
-        elif(isinstance(val,VarUInt)) :
-            buf.pushVarUint32(val)
+        elif(isinstance(val, VarUInt)) :
+            val.encode(buf)
         elif(isinstance(val, int) or
              isinstance(val, long)) :
             buf.pushInt32(val)
@@ -445,24 +468,25 @@ class Abi(BaseObject):
         'uint32': UInt32(),
         'uint64': UInt64(),
         'uint128': Uint128(),
-        'int8': Byte(),       # NotImplemented
-        'int16': Int16(),    # NotImplemented
-        'int32': Int32(),    # NotImplemented
-        'int64': Int64(),    # NotImplemented
-        'float64': Float(),  # NotImplemented
+        'int8': Byte(),       
+        'int16': Int16(),    
+        'int32': Int32(),    
+        'int64': Int64(),    
+        'float64': Float(),  
         # 'varuint32': VarUInt # NotImplemented
         # complex
         'asset' : Asset("1.0000 EOS"),
-        'checksum256': Checksum256(""),  # NotImplemented
+        'checksum256': Checksum256(""),  
         # 'block_timestamp_type': UInt64, # NotImplemented
-        # 'time_point': UInt64, # NotImplemented
+        'time_point': TimePoint(""),
+        'time_point_sec': TimePointSec(""),
         # 'connector': str, # NotImplemented
-        'public_key': PublicKey(""), # NotImplemented
-        'authority': Authority(), # NotImplemented 
+        'public_key': PublicKey(""), 
+        'authority': Authority(),  
         # 'block_header': str, # NotImplemented
         # 'bytes': str, # NotImplemented
-        'permission_level': PermissionLevel(), # NotImplemented
-        'permission_level_weight': PermissionLevelWeight(), #NotImplemented
+        'permission_level': PermissionLevel(), 
+        'permission_level_weight': PermissionLevelWeight(), 
         'key_weight': KeyWeight(),
         'wait_weight': WaitWeight()
     }
@@ -498,7 +522,8 @@ class Abi(BaseObject):
         for struct in self.structs:
             if struct.name == name:
                 return struct
-        raise EOSUnknownObj('{} is not a valid struct for this contract'.format(name))
+        #raise EOSUnknownObj('{} is not a valid struct for this contract'.format(name))
+        return None
 
     def get_action_parameters(self, name):
         ''' '''
@@ -507,12 +532,16 @@ class Abi(BaseObject):
         struct = self.get_struct(name)
         for field in struct.fields:
             f = field.type.strip('[]')
+            f = f.strip("?")
+            ft = self.get_struct(f)
             if(f in self._abi_map):
                 field_type = self._abi_map[f]
                 # check if the field is a list
                 if '[]' in field.type :
                     field_type = [field_type]
                 parameters[field.name] = field_type
+            elif ft:
+                parameters[field.name] = self.get_action_parameters(f)
             else :
                 raise EOSUnknownObj("{} is not a known abi type".format(field.type))
         return parameters
@@ -538,22 +567,30 @@ class Abi(BaseObject):
         self._encode_buffer(VarUInt(len(raw_abi)/2))
         return "{}{}".format(self.getSerialize(), raw_abi)
     
-    def json_to_bin(self, name, data):
-        # act = self.get_action(name)
-        params = self.get_action_parameters(name)
+    def _loop_type(self, params, data):
+        if data is None:
+            self._encode_buffer(VarUInt("0"))
+            return
         for field in data:
             # create EOSBuffer with value as a type of field
             if isinstance(params[field], list):
                 field_type = type(params[field][0])
                 arr = []
                 for f in data[field]: 
-                    print(f)
+                    #print(f)
                     arr.append(field_type(f))
                 self._encode_buffer(arr)
+            elif isinstance(params[field], OrderedDict):
+                self._loop_type(params[field], data[field])
             else:
                 field_type = type(params[field])
                 self._encode_buffer(field_type(data[field]))
-
+    
+    def json_to_bin(self, name, data):
+        # act = self.get_action(name)
+        params = self.get_action_parameters(name)
+        #print(params)
+        self._loop_type(params, data)
         bin_buffer = self.getSerialize()
         self.clearBuffer()
         return bin_buffer
