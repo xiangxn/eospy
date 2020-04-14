@@ -100,24 +100,11 @@ class VarUInt :
     def decode(self, buf):
         return buf.getVarUint32()
     
-class EOSBuffer :
+class EOSBuffer(SerialBuffer) :
     def __init__(self, value=None) :
-        if isinstance(value, SerialBuffer):
-            self._buffer = value
-        elif isinstance(value, str):
-            self._value = value
-        else:
-            self._buffer = SerialBuffer()
+        super(EOSBuffer, self).__init__()
+        self._value = value
             
-    def clear(self):
-        self._buffer.clear()
-        
-    def getHex(self):
-        return self._buffer.hex()
-    
-    def getArray(self):
-        return self._buffer.getByteArray()
-    
     def decode(self, objType, buf=None):
         if not buf:
             buf = self._buffer
@@ -554,7 +541,7 @@ class Abi(BaseObject):
     def encode(self):
         ''' '''
         buf = EOSBuffer()
-        self.get_raw(buf)
+        self.get_raw(buf.getBuffer())
         raw_abi = buf.getHex()
         buf.clear()
         # divide by two because it is hex
@@ -585,7 +572,7 @@ class Abi(BaseObject):
         params = self.get_action_parameters(name)
         buf = EOSBuffer()
         self._loop_type(params, data, buf)
-        return buf.getHex()
+        return buf.hex()
 
 
 
