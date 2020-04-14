@@ -111,6 +111,12 @@ class EOSBuffer :
             
     def clear(self):
         self._buffer.clear()
+        
+    def getHex(self):
+        return self._buffer.hex()
+    
+    def getArray(self):
+        return self._buffer.getByteArray()
     
     def decode(self, objType, buf=None):
         if not buf:
@@ -223,7 +229,6 @@ class EOSBuffer :
 class BaseObject(object) :
     def __init__(self, d=None) :
         ''' '''
-        self._buffer = EOSBuffer()
         try:
             if d:
                 self._obj = self._validator.deserialize(d)
@@ -241,9 +246,9 @@ class BaseObject(object) :
         ''' '''
         return '{}({})'.format(self.__class__, self.__dict__)
         
-    def _encode_buffer(self, value, buf=None) :
+    def _encode_buffer(self, value, buf) :
         ''' '''
-        self._buffer.encode(value, buf)
+        buf.encode(value, buf)
 
     def _create_obj_array(self, arr, class_type) :
         ''' '''
@@ -251,15 +256,6 @@ class BaseObject(object) :
         for item in arr :
             new_arr.append(class_type(item))
         return new_arr
-    
-    def getSerialize(self):
-        return self._buffer._buffer.hex() 
-    
-    def getBuffer(self):
-        return self._buffer._buffer
-    
-    def clearBuffer(self):
-        self._buffer.clear()
 
 class Action(BaseObject) :
     def __init__(self, d) :
@@ -269,10 +265,8 @@ class Action(BaseObject) :
         # setup permissions
         self.authorization = self._create_obj_array(self.authorization, PermissionLevel)
         
-    def encode(self, buf=None) :
+    def encode(self, buf) :
         ''' '''
-        if not buf:
-            buf = self._buffer._buffer
         buf.pushName(self.account)
         buf.pushName(self.name)
         self._encode_buffer(self.authorization, buf)
@@ -407,7 +401,7 @@ class KeyWeight(BaseObject):
         self._validator = KeyWeightSchema()
         super(KeyWeight, self).__init__(d)
         
-    def encode(self, buf=None):
+    def encode(self, buf):
         self._encode_buffer(PublicKey(self.key), buf)
         self._encode_buffer(UInt16(self.weight), buf)
         
@@ -450,7 +444,7 @@ class Authority(BaseObject):
             self.accounts = self._create_obj_array(self.accounts, PermissionLevelWeight)
             self.waits = self._create_obj_array(self.waits, WaitWeight)
         
-    def encode(self, buf=None):
+    def encode(self, buf):
         self._encode_buffer(UInt32(self.threshold), buf)
         self._encode_buffer(self.keys, buf)
         self._encode_buffer(self.accounts, buf)
@@ -546,30 +540,30 @@ class Abi(BaseObject):
                 raise EOSUnknownObj("{} is not a known abi type".format(field.type))
         return parameters
 
-    def get_raw(self):
-        self.clearBuffer()
-        self._encode_buffer(self.version)
-        self._encode_buffer(self.types)
-        self._encode_buffer(self.structs)
-        self._encode_buffer(self.actions)
-        self._encode_buffer(self.tables)
-        self._encode_buffer(self.ricardian_clauses)
-        self._encode_buffer(self.error_messages)
-        self._encode_buffer(self.abi_extensions)
-        self._encode_buffer(self.variants)
-        return self.getSerialize()
+    def get_raw(self, buf):
+        self._encode_buffer(self.version, buf)
+        self._encode_buffer(self.types, buf)
+        self._encode_buffer(self.structs, buf)
+        self._encode_buffer(self.actions, buf)
+        self._encode_buffer(self.tables, buf)
+        self._encode_buffer(self.ricardian_clauses, buf)
+        self._encode_buffer(self.error_messages, buf)
+        self._encode_buffer(self.abi_extensions, buf)
+        self._encode_buffer(self.variants, buf)
 
     def encode(self):
         ''' '''
-        raw_abi = self.get_raw()
-        self.clearBuffer()
+        buf = EOSBuffer()
+        self.get_raw(buf)
+        raw_abi = buf.getHex()
+        buf.clear()
         # divide by two because it is hex
-        self._encode_buffer(VarUInt(len(raw_abi)/2))
-        return "{}{}".format(self.getSerialize(), raw_abi)
+        self._encode_buffer(VarUInt(len(raw_abi)/2), buf)
+        return "{}{}".format(buf.getHex(), raw_abi)
     
-    def _loop_type(self, params, data):
+    def _loop_type(self, params, data, buf):
         if data is None:
-            self._encode_buffer(VarUInt("0"))
+            self._encode_buffer(VarUInt("0"), buf)
             return
         for field in data:
             # create EOSBuffer with value as a type of field
@@ -579,21 +573,19 @@ class Abi(BaseObject):
                 for f in data[field]: 
                     #print(f)
                     arr.append(field_type(f))
-                self._encode_buffer(arr)
+                self._encode_buffer(arr, buf)
             elif isinstance(params[field], OrderedDict):
-                self._loop_type(params[field], data[field])
+                self._loop_type(params[field], data[field], buf)
             else:
                 field_type = type(params[field])
-                self._encode_buffer(field_type(data[field]))
+                self._encode_buffer(field_type(data[field]), buf)
     
     def json_to_bin(self, name, data):
         # act = self.get_action(name)
         params = self.get_action_parameters(name)
-        #print(params)
-        self._loop_type(params, data)
-        bin_buffer = self.getSerialize()
-        self.clearBuffer()
-        return bin_buffer
+        buf = EOSBuffer()
+        self._loop_type(params, data, buf)
+        return buf.getHex()
 
 
 
@@ -627,19 +619,20 @@ class Transaction(BaseObject) :
     
     def encode(self) :
         ''' '''
+        buf = EOSBuffer()
         exp_ts = (self.expiration - dt.datetime(1970, 1, 1, tzinfo=self.expiration.tzinfo)).total_seconds()
-        self._encode_buffer(UInt32(exp_ts))
-        self._encode_buffer(UInt16(self.ref_block_num & 0xffff))
-        self._encode_buffer(UInt32(self.ref_block_prefix))
-        self._encode_buffer(VarUInt(self.net_usage_words))
-        self._encode_buffer(Byte(self.max_cpu_usage_ms))
-        self._encode_buffer(VarUInt(self.delay_sec))
+        self._encode_buffer(UInt32(exp_ts), buf)
+        self._encode_buffer(UInt16(self.ref_block_num & 0xffff), buf)
+        self._encode_buffer(UInt32(self.ref_block_prefix), buf)
+        self._encode_buffer(VarUInt(self.net_usage_words), buf)
+        self._encode_buffer(Byte(self.max_cpu_usage_ms), buf)
+        self._encode_buffer(VarUInt(self.delay_sec), buf)
         
         
-        self._encode_buffer(self.context_free_actions)
-        self._encode_buffer(self.actions)
-        self._encode_buffer(self.transaction_extensions)
-        return self.getBuffer().getByteArray()
+        self._encode_buffer(self.context_free_actions, buf)
+        self._encode_buffer(self.actions, buf)
+        self._encode_buffer(self.transaction_extensions, buf)
+        return buf.getArray()
         
     def get_id(self) :
         return sha256(self.encode())
