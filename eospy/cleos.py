@@ -295,9 +295,11 @@ class Cleos :
                 raise EOSKeyError('Must pass a class that extends the eospy.Signer class')               
             signatures.append(key.sign(digest))
         # build final trx
+        strx = trx.__dict__
+        del strx['_buffer']
         final_trx = {
                 'compression' : compression,
-                'transaction' : trx.__dict__,
+                'transaction' : strx,
                 'signatures' : signatures
         }
         data = json.dumps(final_trx, cls=EOSEncoder)
@@ -339,9 +341,11 @@ class Cleos :
                 raise EOSKeyError('Must pass a WIF string or EOSKey')
             signatures.append(k.sign(digest))
         # build final trx
+        strx = trx.__dict__
+        del strx['_buffer']
         final_trx = {
                 'compression' : compression,
-                'transaction' : trx.__dict__,
+                'transaction' : strx,
                 'signatures' : signatures
         }
         data = json.dumps(final_trx, cls=EOSEncoder)
