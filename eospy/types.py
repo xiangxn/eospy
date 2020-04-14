@@ -619,7 +619,7 @@ class Transaction(BaseObject) :
         self._encode_buffer(self.context_free_actions, buf)
         self._encode_buffer(self.actions, buf)
         self._encode_buffer(self.transaction_extensions, buf)
-        return buf.getArray()
+        return buf.getByteArray()
         
     def get_id(self) :
         return sha256(self.encode())
