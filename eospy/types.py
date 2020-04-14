@@ -276,7 +276,7 @@ class Action(BaseObject) :
         buf.pushName(self.account)
         buf.pushName(self.name)
         self._encode_buffer(self.authorization, buf)
-        buf.pushVarUint32(len(self.data)/2)
+        buf.pushVarUint32(int(len(self.data)/2))
         buf.pushHex(self.data)
 
 class Asset :
