@@ -13,7 +13,7 @@ import datetime as dt
 import time
 
 import eospy.cleos
-from eospy.types import Abi
+from eospy.types import Abi, PackedTransaction, Transaction
 
 class TestSerialize:
     
@@ -115,7 +115,7 @@ class TestSerialize:
         buffer.pushFloat64(6.4)
         buffer.pushName("bitsfleamain")
         buffer.pushBytes(b"bitsfleamain")
-        buffer.pushString("bitsfleamain")
+        buffer.pushString("Qmf58to6L2bepqMjiCiGiwpumXZYuhgwbWw2EdBQgF22JF")
         buffer.pushSymbolCode("FMP")
         buffer.pushSymbol("FMP", 4)
         buffer.pushAsset("123.4560 FMP")
@@ -136,7 +136,7 @@ class TestSerialize:
         assert 6.4 == buffer.getFloat64()
         assert "bitsfleamain" == buffer.getName()
         assert b"bitsfleamain" == buffer.getBytes()
-        assert "bitsfleamain" == buffer.getString()
+        assert "Qmf58to6L2bepqMjiCiGiwpumXZYuhgwbWw2EdBQgF22JF" == buffer.getString()
         assert "FMP" == buffer.getSymbolCode()
         assert ("FMP", 4) == buffer.getSymbol()
         assert "123.4560 FMP" == buffer.getAsset()
@@ -146,5 +146,16 @@ class TestSerialize:
         assert "36893488153293773579" == buffer.getUint128()
         assert "2020-03-03T15:17:13" == buffer.getTimePoint()
         assert "2020-01-20T00:00:00" == buffer.getTimePointSec()
+        
+    def test_packed_transaction(self):
+        sign = "SIG_K1_KXwkbgk7qhZV63RjbioM63hMv1L5g2DtwDetfemcHEMqDW9HmoCHfUKZgKaaq4pFm1gBwCjRP33a86fQKFQppZLKPLE2D9"
+        td = "AE02F75E7830F3166C580000000001309D9146C585B33B00808A6ED15BB3C201804D5A55BFBF036D00000000A8ED32323A804D5A55BFBF036D0100012E516D663538746F364C32626570714D6A69436947697770756D585A59756867776257773245644251674632324A4600"
+        trx = {"signatures":[sign],
+               "compression":0,
+               "packed_context_free_data":"",
+               "packed_trx": td}
+        trx_obj = PackedTransaction(trx['packed_trx'],self.ce).get_transaction()
+        print(trx_obj)
+        
         
         

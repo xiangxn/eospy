@@ -75,6 +75,13 @@ class TimePoint:
         
     def __str__(self):
         return self.value
+    
+class Optional:
+    def __init__(self, v):
+        self.value = v
+        
+    def __str__(self):
+        return "optional.{}".format(type(self.value).__name__)
 
 if six.PY3 :
     class long(int) : pass
@@ -101,13 +108,12 @@ class VarUInt :
         return buf.getVarUint32()
     
 class EOSBuffer(SerialBuffer) :
-    def __init__(self, value=None) :
-        super(EOSBuffer, self).__init__()
-        self._value = value
+    def __init__(self, array=None) :
+        super(EOSBuffer, self).__init__(array)
             
     def decode(self, objType, buf=None):
         if not buf:
-            buf = self._buffer
+            buf = self
         if isinstance(objType, UInt32):
             val = buf.getUint32()
         elif isinstance(objType, UInt16):
@@ -137,6 +143,12 @@ class EOSBuffer(SerialBuffer) :
             val = buf.getName()
         elif isinstance(objType, str):
             val = buf.getString()
+        elif isinstance(objType, Optional):
+            has = buf.getUint8()
+            if has == 0:
+                val = None
+            else:
+                val = self.decode(objType.value, buf)
         elif(isinstance(objType, list)) :
             # get count(VarUint)
             val = []
@@ -150,9 +162,9 @@ class EOSBuffer(SerialBuffer) :
 
     def encode(self, val=None, buf=None) :
         if val is None :
-            val = self._value
+            return
         if not buf:
-            buf = self._buffer
+            buf = self
         if (isinstance(val, Name) or
            isinstance(val, AccountName) or
            isinstance(val, PermissionName) or
@@ -206,6 +218,12 @@ class EOSBuffer(SerialBuffer) :
              isinstance(val, KeyWeight) or
              isinstance(val, PermissionLevel)):
             val.encode(buf)
+        elif(isinstance(val, Optional)):
+            if not val.value:
+                buf.pushUint8(0)
+            else:
+                buf.pushUint8(1)
+                buf.encode(val.value)
         elif(isinstance(val, list)) :
             buf.pushVarUint32(len(val))
             for item in val :
@@ -520,6 +538,8 @@ class Abi(BaseObject):
                 # check if the field is a list
                 if '[]' in field.type :
                     field_type = [field_type]
+                if "?" in field.type :
+                    field_type = Optional(field_type)
                 parameters[field.name] = field_type
             elif ft:
                 parameters[field.name] = self.get_action_parameters(f)
@@ -675,21 +695,20 @@ class PackedTransaction:
             abi = Abi(contract_abi["abi"])
             abi_act = abi.get_action(action_name)
             # temp check need to handle this better
-            if abi_act["type"] != action_name:
+            if abi_act.type != action_name:
                 raise EOSAbiProcessingError("Error processing the {} action".format(action_name)) 
             abi_struct = abi.get_action_parameters(action_name)
             data = OrderedDict()
             # save data for hex_data
-            data_diff = act_buf
             for a in abi_struct:
                 act_data = buf.decode(abi_struct[a])
                 data[a] = act_data
+                
             act = OrderedDict({
                 'account': acct_name,
                 'name': action_name,
                 "authorization": auth,
                 "data": data,
-                "hex_data": data_diff.rstrip(act_buf),
             })
             actions.append(act)
             # increment count
@@ -743,7 +762,7 @@ class PackedTransaction:
         # only unpack once
         if not self._is_unpacked:    
             # decode the header and get the rest of the trx back
-            trx_buf = EOSBuffer(SerialBuffer(bytearray.fromhex(self._packed_trx)))
+            trx_buf = EOSBuffer(bytearray.fromhex(self._packed_trx))
             self._decode_header(trx_buf)
             # process list of context free actions
             context_actions = self.decode_context_actions(trx_buf)

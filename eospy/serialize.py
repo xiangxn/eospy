@@ -196,7 +196,8 @@ class SerialBuffer:
         self.pushArray(v)
         
     def getBytes(self):
-        return self.getUint8Array(self.getVarUint32())
+        l = self.getVarUint32()
+        return self.getUint8Array(l)
     
     def pushString(self, v):
         self.pushBytes(v.encode("utf-8"))
