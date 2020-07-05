@@ -118,6 +118,10 @@ class EOSBuffer(SerialBuffer) :
             val = buf.getUint32()
         elif isinstance(objType, UInt16):
             val = buf.getUint16()
+        elif isinstance(objType, UInt64):
+            val = buf.getUint64()
+        elif isinstance(objType, Uint128):
+            val = buf.getUint128()
         elif isinstance(objType, VarUInt):
             val = objType.decode(buf)
         elif(isinstance(objType, Byte) or
@@ -128,11 +132,9 @@ class EOSBuffer(SerialBuffer) :
         elif(isinstance(objType, int) or
              isinstance(objType, long)) :
             val = buf.getInt32()
-        elif(isinstance(objType, Checksum256)):
+        elif isinstance(objType, Checksum256):
             val = buf.getChecksum256()
-        elif(isinstance(objType, Uint128)):
-            val = buf.getUint128()
-        elif(isinstance(objType, PublicKey)):
+        elif isinstance(objType, PublicKey):
             val = buf.getPublicKey()
         elif (isinstance(objType, Name) or
              isinstance(objType, AccountName) or
@@ -143,19 +145,27 @@ class EOSBuffer(SerialBuffer) :
             val = buf.getName()
         elif isinstance(objType, str):
             val = buf.getString()
+        elif isinstance(objType, TimePointSec):
+            val = buf.getTimePointSec()
         elif isinstance(objType, Optional):
             has = buf.getUint8()
             if has == 0:
                 val = None
             else:
-                val = self.decode(objType.value, buf)
+                val = buf.decode(objType.value)
+        elif(isinstance(objType, Asset)):
+            val = buf.getAsset()
         elif(isinstance(objType, list)) :
             # get count(VarUint)
             val = []
             length = buf.getVarUint32()
             while len(val) < length:
-                out = self.decode(objType[0], buf)
+                out = buf.decode(objType[0])
                 val.append(out)
+        elif isinstance(objType, OrderedDict):
+            val = OrderedDict()
+            for key, oType in objType.items():
+                val[key] = buf.decode(oType)
         else:
             raise EOSBufferInvalidType("Cannot decode type: {}".format(type(objType)))
         return val
@@ -313,6 +323,9 @@ class Asset :
         ''' '''
         if buf:
             buf.pushAsset("{} {}".format(self.amount, self.symbol), self.precision)
+            
+    def decode(self, buf):
+        return buf.getAsset()
 
 class AbiType(BaseObject):
     def __init__(self, d):
@@ -532,7 +545,6 @@ class Abi(BaseObject):
         for field in struct.fields:
             f = field.type.strip('[]')
             f = f.strip("?")
-            ft = self.get_struct(f)
             if(f in self._abi_map):
                 field_type = self._abi_map[f]
                 # check if the field is a list
@@ -541,8 +553,14 @@ class Abi(BaseObject):
                 if "?" in field.type :
                     field_type = Optional(field_type)
                 parameters[field.name] = field_type
-            elif ft:
-                parameters[field.name] = self.get_action_parameters(f)
+            elif self.get_struct(f):
+                pars = self.get_action_parameters(f)
+                if '[]' in field.type:
+                    parameters[field.name] = [pars]
+                elif '?' in field.type:
+                    parameters[field.name] = Optional(pars)
+                else:
+                    parameters[field.name] = pars
             else :
                 raise EOSUnknownObj("{} is not a known abi type".format(field.type))
         return parameters
@@ -710,6 +728,7 @@ class PackedTransaction:
                 "authorization": auth,
                 "data": data,
             })
+            #print("act:",json.dumps(act))
             actions.append(act)
             # increment count
             cnt += 1
