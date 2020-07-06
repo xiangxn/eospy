@@ -342,7 +342,7 @@ class Cleos :
                 raise EOSKeyError('Must pass a WIF string or EOSKey')
             signatures.append(k.sign(digest))
         # build final trx
-       if "packed_trx" in transaction:
+        if "packed_trx" in transaction:
             final_trx = {
                 'compression' : compression,
                 'packed_trx' : transaction['packed_trx'],
