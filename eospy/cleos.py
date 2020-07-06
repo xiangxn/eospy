@@ -320,9 +320,12 @@ class Cleos :
     async def async_push_transaction(self, transaction, keys, broadcast=True, compression='none', timeout=30) :
         ''' parameter keys can be a list of WIF strings or EOSKey objects or a filename to key file'''
         chain_info,lib_info = await self.async_get_chain_lib_info()
-        trx = Transaction(transaction, chain_info, lib_info)
-        #encoded = trx.encode()
-        digest = sig_digest(trx.encode(), chain_info['chain_id'])
+        if "packed_trx" in transaction:
+            digest = sig_digest(bytearray.fromhex(transaction['packed_trx']), chain_info['chain_id'])
+        else:
+            trx = Transaction(transaction, chain_info, lib_info)
+            #encoded = trx.encode()
+            digest = sig_digest(trx.encode(), chain_info['chain_id'])
         # sign the transaction
         signatures = []
         if os.path.isfile(keys):
@@ -339,11 +342,18 @@ class Cleos :
                 raise EOSKeyError('Must pass a WIF string or EOSKey')
             signatures.append(k.sign(digest))
         # build final trx
-        final_trx = {
+       if "packed_trx" in transaction:
+            final_trx = {
                 'compression' : compression,
-                'transaction' : trx.__dict__,
+                'packed_trx' : transaction['packed_trx'],
                 'signatures' : signatures
-        }
+            }
+        else:
+            final_trx = {
+                    'compression' : compression,
+                    'transaction' : trx.__dict__,
+                    'signatures' : signatures
+            }
         data = json.dumps(final_trx, cls=EOSEncoder)
         if broadcast :
             return await self.async_broadcast(data, timeout=timeout)
