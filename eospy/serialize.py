@@ -280,7 +280,7 @@ class SerialBuffer:
         return signatureToString((type, data))
     
     def pushUint128(self, s):
-        data = decimalToBinary(16, s)
+        data = decimalToBinary(16, str(s))
         self.pushArray(data)
         
     def getUint128(self):
