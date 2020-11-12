@@ -25,7 +25,7 @@ setup(
     install_requires=[
         'requests',
         'base58>=1.0.3',
-        'ecdsa',
+        'ecdsa>=0.13.3,<0.14',
         'colander',
         'pytz',
         'six',
